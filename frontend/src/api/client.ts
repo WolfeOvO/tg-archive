@@ -96,17 +96,17 @@ class ApiClient {
     return this.request<any>(`/tasks/${id}`);
   }
 
-  async rescan(channel?: string) {
+  async rescan(channel?: string, mountId?: string) {
     return this.request<any>('/tasks/rescan', {
       method: 'POST',
-      body: JSON.stringify({ channel }),
+      body: JSON.stringify({ channel, mount_id: mountId }),
     });
   }
 
-  async retryFailed() {
+  async retryFailed(mountId?: string) {
     return this.request<any>('/tasks/retry', {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify({ mount_id: mountId }),
     });
   }
 
@@ -149,6 +149,34 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({}),
     });
+  }
+
+  async getStorageDrivers() {
+    return this.request<any>('/storage/drivers');
+  }
+
+  async getMounts() {
+    return this.request<any>('/storage/mounts');
+  }
+
+  async getMount(id: string) {
+    return this.request<any>(`/storage/mounts/${id}`);
+  }
+
+  async createMount(data: Record<string, any>) {
+    return this.request<any>('/storage/mounts', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateMount(id: string, data: Record<string, any>) {
+    return this.request<any>(`/storage/mounts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async deleteMount(id: string) {
+    return this.request<any>(`/storage/mounts/${id}`, { method: 'DELETE' });
+  }
+
+  async testMount(id: string) {
+    return this.request<any>(`/storage/mounts/${id}/test`, { method: 'POST' });
   }
 }
 

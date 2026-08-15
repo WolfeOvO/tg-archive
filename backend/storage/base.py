@@ -81,3 +81,22 @@ class CloudStorageBase(ABC):
     async def close(self) -> None:
         """Cleanup resources."""
         pass
+
+
+class UnconfiguredStorage(CloudStorageBase):
+    """Keeps the WebUI available until the user creates a storage mount."""
+
+    def _error(self):
+        raise RuntimeError("No storage mount configured")
+
+    async def upload_file(self, local_path, remote_path, mime_type=None):
+        self._error()
+
+    async def file_exists(self, remote_path):
+        self._error()
+
+    async def create_folder(self, folder_path):
+        self._error()
+
+    async def get_storage_info(self):
+        return {"used": 0, "total": 0, "available": 0, "detail": "No storage mount configured"}

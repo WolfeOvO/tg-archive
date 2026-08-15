@@ -12,7 +12,7 @@
 
 - 📡 **自动监控** — 实时监听 Telegram 频道新消息
 - 🔔 **多渠道通知** — 归档状态可发送到 Telegram Bot、Discord、QQ Bot（OneBot v11）和通用 Webhook
-- ☁️ **多云盘支持** — 123云盘、本地存储，架构可扩展
+- ☁️ **OpenList 多挂载** — 实时加载 OpenList 全部驱动，每个挂载点独立配置并可作为任务目标
 - 🖥️ **Web 管理界面** — 配置任务、查看状态、浏览日志
 - 📊 **实时状态面板** — 传输进度、速度、历史统计
 - 🔄 **断点续传** — 自动重试失败任务，支持分片上传
@@ -53,7 +53,7 @@ vim .env
 docker compose up -d
 ```
 
-访问 `http://localhost:3000` 打开管理界面。
+访问 `http://localhost:8000` 打开管理界面。
 
 ### 手动安装
 
@@ -84,9 +84,11 @@ TG_SESSION_STRING=your_session_string
 # 目标频道（用户名或 ID）
 TG_CHANNEL=@your_channel
 
-# 云盘类型: pan123 | local
-CLOUD_TYPE=pan123
-PAN123_ACCESS_TOKEN=your_token
+# OpenList 管理连接（挂载点在 WebUI 中创建，初始为空）
+OPENLIST_URL=http://openlist:5244
+OPENLIST_USERNAME=admin
+OPENLIST_PASSWORD=your_openlist_admin_password
+OPENLIST_DEFAULT_MOUNT_ID=
 
 # WebUI 管理密码
 ADMIN_PASSWORD=your_secure_password
@@ -123,6 +125,9 @@ asyncio.run(main())
 | GET | `/api/tasks` | 任务列表 |
 | GET | `/api/tasks/{id}` | 任务详情 |
 | POST | `/api/tasks/rescan` | 重新扫描频道 |
+| GET | `/api/storage/drivers` | OpenList 实时驱动目录 |
+| GET | `/api/storage/mounts` | 存储挂载点列表 |
+| POST | `/api/storage/mounts` | 创建存储挂载点 |
 | GET | `/api/config` | 获取配置 |
 | PUT | `/api/config` | 更新配置 |
 | GET | `/api/logs` | 操作日志 |

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { api } from '../api/client';
 import { usePolling } from '../hooks/useAuth';
 
@@ -26,6 +26,8 @@ function StateBadge({ state }: { state: string }) {
 export default function Tasks() {
   const [filter, setFilter] = useState<string>('');
   const [page, setPage] = useState(0);
+  const [mounts, setMounts] = useState<any[]>([]);
+  const [mountId, setMountId] = useState('');
   const limit = 20;
 
   const fetchTasks = useCallback(
@@ -38,6 +40,14 @@ export default function Tasks() {
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / limit);
 
+  useEffect(() => {
+    api.getMounts().then((result) => {
+      const enabled = result.mounts.filter((mount: any) => mount.enabled);
+      setMounts(enabled);
+      setMountId(enabled.find((mount: any) => mount.default)?.id || enabled[0]?.id || '');
+    });
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -48,13 +58,13 @@ export default function Tasks() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => api.rescan()}
+            onClick={() => api.rescan(undefined, mountId || undefined)}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
           >
             🔄 立即扫描
           </button>
           <button
-            onClick={() => api.retryFailed()}
+            onClick={() => api.retryFailed(mountId || undefined)}
             className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg border border-gray-700 transition-colors"
           >
             🔁 重试失败
@@ -63,6 +73,13 @@ export default function Tasks() {
       </div>
 
       {/* Filters */}
+      <div className="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 px-4 py-3">
+        <label htmlFor="task-mount" className="text-sm text-gray-400">目标挂载点</label>
+        <select id="task-mount" value={mountId} onChange={(event) => setMountId(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white">
+          {mounts.map((mount) => <option key={mount.id} value={mount.id}>{mount.name} · {mount.mount_path}{mount.default ? '（默认）' : ''}</option>)}
+        </select>
+      </div>
+
       <div className="flex gap-2 flex-wrap">
         {[
           { value: '', label: '全部' },

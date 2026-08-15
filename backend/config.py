@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     pan123_access_token: str = Field(default="", description="123pan API access token")
     pan123_parent_file_id: int = Field(default=0, description="123pan parent folder ID")
 
+    # OpenList storage engine (optional; exposes its full dynamic driver catalog)
+    openlist_url: str = Field(default="", description="OpenList base URL")
+    openlist_username: str = Field(default="", description="OpenList admin username")
+    openlist_password: str = Field(default="", description="OpenList admin password")
+    openlist_default_mount_id: str = Field(default="", description="Default OpenList storage ID")
+
     # WebUI
     admin_password: str = Field(default="changeme", description="Admin password")
     secret_key: str = Field(default="change-this-to-a-random-secret-key", description="JWT secret key")

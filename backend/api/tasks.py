@@ -16,10 +16,12 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 class RescanRequest(BaseModel):
     channel: str = None
+    mount_id: str = None
 
 
 class RetryRequest(BaseModel):
     message_ids: list[int] = None  # None = retry all failed
+    mount_id: str = None
 
 
 @router.get("")
@@ -107,7 +109,7 @@ async def rescan(
     from main import archiver
 
     try:
-        results = await archiver.scan_and_archive(channel=req.channel)
+        results = await archiver.scan_and_archive(channel=req.channel, mount_id=req.mount_id)
         return {"success": True, "results": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -130,7 +132,7 @@ async def retry_tasks(
                 status_code=501, detail="Per-message retry not yet implemented"
             )
         else:
-            results = await archiver.retry_failed()
+            results = await archiver.retry_failed(mount_id=req.mount_id)
         return {"success": True, "results": results}
     except HTTPException:
         raise

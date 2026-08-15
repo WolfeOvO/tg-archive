@@ -19,7 +19,8 @@ from core.notifications import (
     notification_settings_from_app,
 )
 from core.scheduler import Scheduler
-from storage.base import CloudStorageBase
+from storage.base import CloudStorageBase, UnconfiguredStorage
+from storage.openlist_engine import OpenListEngine
 
 # Configure logging
 if settings.log_file:
@@ -49,6 +50,7 @@ scheduler: Scheduler = None  # type: ignore
 telegram_monitor: TelegramMonitor = None  # type: ignore
 cloud_storage: CloudStorageBase = None  # type: ignore
 notifier: NotificationHub = None  # type: ignore
+mount_manager = None
 
 
 def create_storage() -> CloudStorageBase:
@@ -74,7 +76,7 @@ def create_storage() -> CloudStorageBase:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle: startup and shutdown."""
-    global archiver, scheduler, telegram_monitor, cloud_storage, notifier
+    global archiver, scheduler, telegram_monitor, cloud_storage, notifier, mount_manager
 
     logger.info("Starting TG Archive...")
 
@@ -92,10 +94,27 @@ async def lifespan(app: FastAPI):
     app.state.notifier = notifier
     app.state.notification_store = notification_store
 
-    # Initialize cloud storage
-    cloud_storage = create_storage()
-    await cloud_storage.initialize()
-    logger.info(f"Cloud storage initialized: {settings.cloud_type}")
+    if settings.openlist_url and settings.openlist_username and settings.openlist_password:
+        mount_manager = OpenListEngine(
+            settings.openlist_url,
+            settings.openlist_username,
+            settings.openlist_password,
+            state_path=settings.data_dir / "openlist-state.json",
+        )
+        if settings.openlist_default_mount_id and not mount_manager.default_mount_id:
+            mount_manager.set_default_mount(settings.openlist_default_mount_id)
+        try:
+            await mount_manager.refresh()
+            cloud_storage = await mount_manager.adapter() if mount_manager._mounts else UnconfiguredStorage()
+            logger.info("OpenList storage engine connected: %s drivers", len(mount_manager._drivers))
+        except Exception as exc:
+            logger.error("OpenList storage engine unavailable: %s", exc)
+            cloud_storage = UnconfiguredStorage()
+    else:
+        mount_manager = None
+        cloud_storage = UnconfiguredStorage()
+        logger.warning("OpenList storage engine not configured; mount list is empty")
+    app.state.storage_engine = mount_manager
 
     # Initialize Telegram client
     if settings.tg_api_id and settings.tg_api_hash and settings.tg_session_string:
@@ -109,7 +128,7 @@ async def lifespan(app: FastAPI):
             logger.info("Telegram client connected")
 
             # Initialize archiver
-            archiver = Archiver(telegram_monitor, cloud_storage, notifier=notifier)
+            archiver = Archiver(telegram_monitor, cloud_storage, notifier=notifier, mount_manager=mount_manager)
 
             # Start scheduler
             scheduler = Scheduler(archiver)
@@ -119,11 +138,11 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to initialize Telegram: {e}")
             logger.info("WebUI will work, but archiving is disabled")
             # Create a dummy archiver for API responses
-            archiver = Archiver(None, cloud_storage, notifier=notifier)  # type: ignore
+            archiver = Archiver(None, cloud_storage, notifier=notifier, mount_manager=mount_manager)  # type: ignore
             scheduler = Scheduler(archiver)
     else:
         logger.warning("Telegram credentials not configured. Archiving disabled.")
-        archiver = Archiver(None, cloud_storage, notifier=notifier)  # type: ignore
+        archiver = Archiver(None, cloud_storage, notifier=notifier, mount_manager=mount_manager)  # type: ignore
         scheduler = Scheduler(archiver)
 
     yield
@@ -134,8 +153,8 @@ async def lifespan(app: FastAPI):
         await scheduler.stop()
     if telegram_monitor:
         await telegram_monitor.disconnect()
-    if cloud_storage:
-        await cloud_storage.close()
+    if mount_manager:
+        await mount_manager.close()
     logger.info("Shutdown complete")
 
 
@@ -158,16 +177,20 @@ app.add_middleware(
 
 # Register API routes
 from api.auth import router as auth_router
+from api.health import router as health_router
 from api.status import router as status_router
 from api.tasks import router as tasks_router
 from api.config import router as config_router
 from api.notifications import router as notifications_router
+from api.storage import router as storage_router
 
 app.include_router(auth_router)
+app.include_router(health_router)
 app.include_router(status_router)
 app.include_router(tasks_router)
 app.include_router(config_router)
 app.include_router(notifications_router)
+app.include_router(storage_router)
 
 
 frontend_dist = find_frontend_dist(Path(__file__).parent)

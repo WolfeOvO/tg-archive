@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Tasks from './pages/Tasks';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
+import Storage from './pages/Storage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -40,6 +41,7 @@ export default function App() {
                   <Route path="/tasks" element={<Tasks />} />
                   <Route path="/logs" element={<Logs />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/storage" element={<Storage />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Layout>

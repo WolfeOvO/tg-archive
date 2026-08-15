@@ -5,6 +5,7 @@ const navItems = [
   { path: '/', label: '仪表盘', icon: '📊' },
   { path: '/tasks', label: '归档任务', icon: '📋' },
   { path: '/logs', label: '操作日志', icon: '📝' },
+  { path: '/storage', label: '存储挂载', icon: '🗄️' },
   { path: '/settings', label: '设置', icon: '⚙️' },
 ];
 
@@ -18,7 +19,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="flex h-screen h-[100dvh] flex-col overflow-hidden bg-gray-950 md:flex-row">
       {/* Sidebar */}
       <aside className="hidden w-64 shrink-0 bg-gray-900 border-r border-gray-800 md:flex flex-col">
         {/* Logo */}
@@ -66,13 +67,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="min-w-0 flex-1 overflow-auto pb-20 md:pb-0">
+      <main className="min-h-0 min-w-0 flex-1 overflow-auto">
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
           {children}
         </div>
       </main>
 
-      <nav aria-label="手机导航" className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t border-gray-800 bg-gray-900/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+      <nav aria-label="手机导航" className="z-50 grid shrink-0 grid-cols-6 border-t border-gray-800 bg-gray-900/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         {navItems.map((item) => (
           <NavLink
             key={item.path}

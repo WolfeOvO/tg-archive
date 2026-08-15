@@ -6,6 +6,7 @@ import logging
 import os
 import tempfile
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -31,10 +32,12 @@ class Archiver:
         telegram: TelegramMonitor,
         storage: CloudStorageBase,
         notifier=None,
+        mount_manager=None,
     ):
         self.telegram = telegram
         self.storage = storage
         self.notifier = notifier
+        self.mount_manager = mount_manager
         self._running = False
         self._stats = {
             "total_processed": 0,
@@ -47,7 +50,23 @@ class Archiver:
     def stats(self) -> dict:
         return self._stats.copy()
 
-    async def scan_and_archive(self, channel: Optional[str] = None) -> dict:
+    @asynccontextmanager
+    async def _storage_session(self, mount_id: str | None):
+        if self.mount_manager is None:
+            yield self.storage
+            return
+        session = getattr(self.mount_manager, "adapter_session", None)
+        if session is not None:
+            async with session(mount_id) as storage:
+                yield storage
+            return
+        yield await self.mount_manager.adapter(mount_id)
+
+    async def scan_and_archive(
+        self,
+        channel: Optional[str] = None,
+        mount_id: str | None = None,
+    ) -> dict:
         """Scan for new messages and archive them.
 
         Returns:
@@ -58,6 +77,10 @@ class Archiver:
             raise ValueError("No channel configured")
 
         results = {"scanned": 0, "archived": 0, "skipped": 0, "errors": 0}
+        if self.mount_manager is not None:
+            selected = self.mount_manager.resolve(mount_id)
+            mount_id = selected.id
+            results["mount_id"] = mount_id
 
         async with async_session() as db:
             # Get last processed message ID
@@ -75,8 +98,11 @@ class Archiver:
                         results["skipped"] += 1
                         continue
 
-                    # Process the message
-                    success = await self._archive_message(db, channel, media_info)
+                    # Process the message while leasing the selected mount adapter.
+                    async with self._storage_session(mount_id) as storage:
+                        success = await self._archive_message(
+                            db, channel, media_info, storage=storage
+                        )
                     if success:
                         results["archived"] += 1
                     else:
@@ -100,9 +126,14 @@ class Archiver:
         return results
 
     async def _archive_message(
-        self, db: AsyncSession, channel: str, media_info: MediaInfo
+        self,
+        db: AsyncSession,
+        channel: str,
+        media_info: MediaInfo,
+        storage: CloudStorageBase | None = None,
     ) -> bool:
         """Archive a single message: download → upload → record."""
+        storage = storage or self.storage
         # Create or update message record
         record = await db.get(Message, media_info.message_id)
         if not record:
@@ -134,7 +165,7 @@ class Archiver:
 
         # Check if already exists in cloud
         try:
-            if await self.storage.file_exists(remote_path):
+            if await storage.file_exists(remote_path):
                 record.state = "done"
                 record.cloud_ids = json.dumps([{"path": remote_path, "exists": True}])
                 record.updated_at = time.time()
@@ -178,7 +209,7 @@ class Archiver:
         await db.commit()
 
         try:
-            result = await self.storage.upload_file(
+            result = await storage.upload_file(
                 local_path, remote_path, media_info.mime_type
             )
         except Exception as e:
@@ -204,7 +235,7 @@ class Archiver:
                 os.makedirs(download_dir, exist_ok=True)
                 with open(caption_file, "w") as f:
                     f.write(media_info.caption)
-                caption_result = await self.storage.upload_file(caption_file, caption_path)
+                caption_result = await storage.upload_file(caption_file, caption_path)
                 result_dict = {
                     "files": [
                         {"id": result.file_id, "path": remote_path, "md5": result.md5, "size": result.file_size},
@@ -254,13 +285,15 @@ class Archiver:
         )
         return True
 
-    async def retry_failed(self) -> dict:
+    async def retry_failed(self, mount_id: str | None = None) -> dict:
         """Retry all failed messages.
 
         Returns:
             Dict with retry results
         """
         results = {"retried": 0, "succeeded": 0, "failed": 0}
+        if self.mount_manager is not None:
+            results["mount_id"] = self.mount_manager.resolve(mount_id).id
 
         async with async_session() as db:
             stmt = select(Message).where(Message.state == "error")
@@ -287,7 +320,10 @@ class Archiver:
                         caption=record.caption,
                         date=datetime.fromtimestamp(record.created_at).isoformat(),
                     )
-                    success = await self._archive_message(db, channel, media_info)
+                    async with self._storage_session(mount_id) as storage:
+                        success = await self._archive_message(
+                            db, channel, media_info, storage=storage
+                        )
                     if success:
                         results["succeeded"] += 1
                     else:
