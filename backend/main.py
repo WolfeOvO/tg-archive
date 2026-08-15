@@ -10,12 +10,21 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from database import init_db
+from frontend_paths import find_frontend_dist
 from core.telegram_client import TelegramMonitor
 from core.archiver import Archiver
+from core.notifications import (
+    NotificationConfigStore,
+    NotificationHub,
+    notification_settings_from_app,
+)
 from core.scheduler import Scheduler
 from storage.base import CloudStorageBase
 
 # Configure logging
+if settings.log_file:
+    Path(settings.log_file).parent.mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=getattr(logging, settings.log_level),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -29,12 +38,17 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
+# httpx logs complete request URLs at INFO. Notification URLs can contain bot
+# or webhook credentials, so request logging must never reach application logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # Global instances (initialized in lifespan)
 archiver: Archiver = None  # type: ignore
 scheduler: Scheduler = None  # type: ignore
 telegram_monitor: TelegramMonitor = None  # type: ignore
 cloud_storage: CloudStorageBase = None  # type: ignore
+notifier: NotificationHub = None  # type: ignore
 
 
 def create_storage() -> CloudStorageBase:
@@ -60,7 +74,7 @@ def create_storage() -> CloudStorageBase:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle: startup and shutdown."""
-    global archiver, scheduler, telegram_monitor, cloud_storage
+    global archiver, scheduler, telegram_monitor, cloud_storage, notifier
 
     logger.info("Starting TG Archive...")
 
@@ -70,6 +84,13 @@ async def lifespan(app: FastAPI):
     )
     await init_db()
     logger.info("Database initialized")
+
+    notification_store = NotificationConfigStore(settings.data_dir / "notifications.json")
+    notifier = NotificationHub(
+        notification_store.load(notification_settings_from_app(settings))
+    )
+    app.state.notifier = notifier
+    app.state.notification_store = notification_store
 
     # Initialize cloud storage
     cloud_storage = create_storage()
@@ -88,7 +109,7 @@ async def lifespan(app: FastAPI):
             logger.info("Telegram client connected")
 
             # Initialize archiver
-            archiver = Archiver(telegram_monitor, cloud_storage)
+            archiver = Archiver(telegram_monitor, cloud_storage, notifier=notifier)
 
             # Start scheduler
             scheduler = Scheduler(archiver)
@@ -98,11 +119,11 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to initialize Telegram: {e}")
             logger.info("WebUI will work, but archiving is disabled")
             # Create a dummy archiver for API responses
-            archiver = Archiver(None, cloud_storage)  # type: ignore
+            archiver = Archiver(None, cloud_storage, notifier=notifier)  # type: ignore
             scheduler = Scheduler(archiver)
     else:
         logger.warning("Telegram credentials not configured. Archiving disabled.")
-        archiver = Archiver(None, cloud_storage)  # type: ignore
+        archiver = Archiver(None, cloud_storage, notifier=notifier)  # type: ignore
         scheduler = Scheduler(archiver)
 
     yield
@@ -140,15 +161,16 @@ from api.auth import router as auth_router
 from api.status import router as status_router
 from api.tasks import router as tasks_router
 from api.config import router as config_router
+from api.notifications import router as notifications_router
 
 app.include_router(auth_router)
 app.include_router(status_router)
 app.include_router(tasks_router)
 app.include_router(config_router)
+app.include_router(notifications_router)
 
 
-# Serve frontend static files (after build)
-frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+frontend_dist = find_frontend_dist(Path(__file__).parent)
 if frontend_dist.exists():
     from fastapi.responses import FileResponse
 

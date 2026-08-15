@@ -132,6 +132,24 @@ class ApiClient {
       body: JSON.stringify(data),
     });
   }
+
+  async getNotifications() {
+    return this.request<any>('/notifications');
+  }
+
+  async updateNotifications(data: Record<string, any>) {
+    return this.request<any>('/notifications', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async testNotifications() {
+    return this.request<any>('/notifications/test', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
 }
 
 export const api = new ApiClient();

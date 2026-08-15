@@ -20,7 +20,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-950 flex">
       {/* Sidebar */}
-      <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col">
+      <aside className="hidden w-64 shrink-0 bg-gray-900 border-r border-gray-800 md:flex flex-col">
         {/* Logo */}
         <div className="p-6 border-b border-gray-800">
           <div className="flex items-center gap-3">
@@ -66,11 +66,29 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
-        <div className="p-8 max-w-7xl mx-auto">
+      <main className="min-w-0 flex-1 overflow-auto pb-20 md:pb-0">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
           {children}
         </div>
       </main>
+
+      <nav aria-label="手机导航" className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t border-gray-800 bg-gray-900/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+        {navItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.path === '/'}
+            className={({ isActive }) => `flex min-w-0 flex-col items-center gap-1 px-1 py-2 text-xs ${isActive ? 'text-blue-400' : 'text-gray-500'}`}
+          >
+            <span aria-hidden="true" className="text-base">{item.icon}</span>
+            <span className="truncate">{item.label}</span>
+          </NavLink>
+        ))}
+        <button onClick={handleLogout} className="flex min-w-0 flex-col items-center gap-1 px-1 py-2 text-xs text-gray-500 hover:text-red-400">
+          <span aria-hidden="true" className="text-base">🚪</span>
+          <span className="truncate">退出</span>
+        </button>
+      </nav>
     </div>
   );
 }

@@ -17,6 +17,7 @@ from config import settings
 from database import async_session
 from models import Message, TaskLog
 from core.telegram_client import TelegramMonitor, MediaInfo
+from core.notifications import NotificationEvent
 from storage.base import CloudStorageBase, UploadResult
 
 logger = logging.getLogger(__name__)
@@ -29,9 +30,11 @@ class Archiver:
         self,
         telegram: TelegramMonitor,
         storage: CloudStorageBase,
+        notifier=None,
     ):
         self.telegram = telegram
         self.storage = storage
+        self.notifier = notifier
         self._running = False
         self._stats = {
             "total_processed": 0,
@@ -83,6 +86,7 @@ class Archiver:
                     logger.error(f"Error archiving message {media_info.message_id}: {e}")
                     results["errors"] += 1
                     await self._log_error(db, str(e), media_info.message_id)
+                    await self._notify_failure(channel, media_info, str(e))
 
                 await db.commit()
 
@@ -92,6 +96,7 @@ class Archiver:
         self._stats["total_errors"] += results["errors"]
 
         logger.info(f"Scan results: {results}")
+        await self._notify(NotificationEvent.SCAN_SUMMARY, {"channel": channel, **results})
         return results
 
     async def _archive_message(
@@ -134,6 +139,17 @@ class Archiver:
                 record.cloud_ids = json.dumps([{"path": remote_path, "exists": True}])
                 record.updated_at = time.time()
                 logger.info(f"Message {media_info.message_id} already in cloud, skipping")
+                await db.commit()
+                await self._notify(
+                    NotificationEvent.ARCHIVE_SUCCESS,
+                    {
+                        "channel": channel,
+                        "message_id": media_info.message_id,
+                        "file_name": media_info.file_name,
+                        "file_size": media_info.file_size,
+                        "remote_path": remote_path,
+                    },
+                )
                 return True
         except Exception:
             pass  # If check fails, proceed with upload
@@ -153,6 +169,7 @@ class Archiver:
             record.error = f"Download failed: {e}"
             record.updated_at = time.time()
             logger.error(f"Download failed for message {media_info.message_id}: {e}")
+            await self._notify_failure(channel, media_info, record.error)
             return False
 
         # Upload
@@ -169,6 +186,7 @@ class Archiver:
             record.error = f"Upload failed: {e}"
             record.updated_at = time.time()
             logger.error(f"Upload failed for message {media_info.message_id}: {e}")
+            await self._notify_failure(channel, media_info, record.error)
             return False
         finally:
             # Cleanup temp file
@@ -223,6 +241,17 @@ class Archiver:
         )
 
         logger.info(f"Archived message {media_info.message_id} → {remote_path}")
+        await db.commit()
+        await self._notify(
+            NotificationEvent.ARCHIVE_SUCCESS,
+            {
+                "channel": channel,
+                "message_id": media_info.message_id,
+                "file_name": media_info.file_name,
+                "file_size": media_info.file_size,
+                "remote_path": remote_path,
+            },
+        )
         return True
 
     async def retry_failed(self) -> dict:
@@ -266,10 +295,42 @@ class Archiver:
                 except Exception as e:
                     results["failed"] += 1
                     logger.error(f"Retry failed for message {record.id}: {e}")
+                    await self._notify(
+                        NotificationEvent.ARCHIVE_FAILURE,
+                        {
+                            "channel": record.channel or settings.tg_channel,
+                            "message_id": record.id,
+                            "file_name": record.file_name,
+                            "file_size": record.file_size,
+                            "error": str(e),
+                        },
+                    )
 
                 await db.commit()
 
+        if results["retried"]:
+            await self._notify(NotificationEvent.RETRY_SUMMARY, results)
         return results
+
+    async def _notify_failure(self, channel: str, media_info: MediaInfo, error: str) -> None:
+        await self._notify(
+            NotificationEvent.ARCHIVE_FAILURE,
+            {
+                "channel": channel,
+                "message_id": media_info.message_id,
+                "file_name": media_info.file_name,
+                "file_size": media_info.file_size,
+                "error": error,
+            },
+        )
+
+    async def _notify(self, event: NotificationEvent, context: dict) -> None:
+        if self.notifier is None:
+            return
+        try:
+            await self.notifier.publish(event, context)
+        except Exception:
+            logger.exception("Unexpected notification error for %s", event.value)
 
     async def get_status(self) -> dict:
         """Get comprehensive archive status."""

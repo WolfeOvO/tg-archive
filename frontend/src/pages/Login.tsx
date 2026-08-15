@@ -43,10 +43,11 @@ export default function Login() {
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label htmlFor="admin-password" className="block text-sm font-medium text-gray-400 mb-2">
                 管理密码
               </label>
               <input
+                id="admin-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

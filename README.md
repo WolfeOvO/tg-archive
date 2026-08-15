@@ -11,6 +11,7 @@
 ## ✨ 特性
 
 - 📡 **自动监控** — 实时监听 Telegram 频道新消息
+- 🔔 **多渠道通知** — 归档状态可发送到 Telegram Bot、Discord、QQ Bot（OneBot v11）和通用 Webhook
 - ☁️ **多云盘支持** — 123云盘、本地存储，架构可扩展
 - 🖥️ **Web 管理界面** — 配置任务、查看状态、浏览日志
 - 📊 **实时状态面板** — 传输进度、速度、历史统计
@@ -18,6 +19,17 @@
 - 📁 **智能整理** — 按频道/日期自动创建目录结构
 - 🔐 **安全认证** — WebUI 登录保护
 - 🐳 **Docker 部署** — 一键启动
+
+### 消息通知
+
+在 WebUI 的“设置 → 消息通知”中可同时绑定多个渠道：
+
+- **Telegram Bot**：填写 Bot Token 与 Chat ID，可发送到私聊、群组或频道
+- **Discord**：填写频道 Incoming Webhook URL
+- **QQ Bot**：兼容 NapCat、Lagrange 等提供的 OneBot v11 HTTP 接口，支持群聊和私聊
+- **通用 Webhook**：发送结构化 JSON；配置密钥后附带 `X-TG-Archive-Signature` HMAC-SHA256 签名
+
+通知事件可独立选择：单文件成功、单文件失败、扫描摘要和重试摘要。各渠道并发发送且相互隔离，通知失败不会阻塞归档。后台绑定信息保存到 `data/notifications.json`（权限 `0600`），也可通过 `.env` 中的 `NOTIFICATION_*` 变量提供首次启动默认值。
 
 ## 📸 截图
 

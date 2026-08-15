@@ -1,5 +1,6 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { api } from '../api/client';
+import NotificationSettings from '../components/NotificationSettings';
 
 export default function Settings() {
   const [config, setConfig] = useState<any>(null);
@@ -88,7 +89,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold text-white">设置</h1>
         <p className="text-gray-500 mt-1">配置归档参数和凭据</p>
@@ -171,6 +172,8 @@ export default function Settings() {
           {saving ? '保存中...' : '保存配置'}
         </button>
       </form>
+
+      <NotificationSettings />
 
       {/* Credentials */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">

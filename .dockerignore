@@ -1,0 +1,10 @@
+.git
+.env
+data
+archive_output
+**/__pycache__
+**/*.pyc
+backend/tests
+frontend/node_modules
+frontend/dist
+frontend/tsconfig.tsbuildinfo

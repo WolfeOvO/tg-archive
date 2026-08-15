@@ -1,8 +1,6 @@
 """Configuration management for TG Archive."""
 
-import os
 from pathlib import Path
-from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -46,6 +44,27 @@ class Settings(BaseSettings):
     retry_interval: int = Field(default=300, description="Retry interval in seconds")
     max_retries: int = Field(default=3, description="Max retry count per message")
     download_timeout: int = Field(default=600, description="Download timeout in seconds")
+
+    # Notifications
+    notification_app_name: str = Field(default="TG Archive", description="Notification sender name")
+    notification_events: str = Field(
+        default="archive.failure,scan.summary,retry.summary",
+        description="Comma-separated notification events",
+    )
+    notification_timeout: float = Field(default=10.0, description="Delivery timeout in seconds")
+    notification_telegram_enabled: bool = False
+    notification_telegram_bot_token: str = ""
+    notification_telegram_chat_id: str = ""
+    notification_discord_enabled: bool = False
+    notification_discord_webhook_url: str = ""
+    notification_qq_enabled: bool = False
+    notification_qq_api_url: str = "http://127.0.0.1:3000"
+    notification_qq_access_token: str = ""
+    notification_qq_target_type: str = "group"
+    notification_qq_target_id: str = ""
+    notification_webhook_enabled: bool = False
+    notification_webhook_url: str = ""
+    notification_webhook_secret: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
