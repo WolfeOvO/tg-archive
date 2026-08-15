@@ -30,7 +30,7 @@
 ### Docker 部署（推荐）
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/tg-archive.git
+git clone https://github.com/WolfeOvO/tg-archive.git
 cd tg-archive
 
 # 编辑配置
