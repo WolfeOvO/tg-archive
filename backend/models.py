@@ -28,6 +28,24 @@ class Message(Base):
     updated_at = Column(Float, nullable=False, default=time.time, onupdate=time.time)
 
 
+class ArchiveStats(Base):
+    """Runtime archive statistics (persisted per channel)."""
+
+    __tablename__ = "archive_stats"
+
+    channel = Column(String(200), primary_key=True)
+    bytes_uploaded = Column(Integer, nullable=False, default=0)  # Deduplicated real storage
+    run_transfer_bytes = Column(Integer, nullable=False, default=0)  # Flow counter (resets on restart)
+    media_total_bytes = Column(Integer, nullable=False, default=0)  # Declared total from messages
+    messages_total = Column(Integer, nullable=False, default=0)
+    messages_done = Column(Integer, nullable=False, default=0)
+    media_total = Column(Integer, nullable=False, default=0)
+    media_uploaded = Column(Integer, nullable=False, default=0)
+    started_at = Column(Float, nullable=True)
+    finished_at = Column(Float, nullable=True)
+    updated_at = Column(Float, nullable=False, default=time.time, onupdate=time.time)
+
+
 class TaskLog(Base):
     """Operation log entry."""
 

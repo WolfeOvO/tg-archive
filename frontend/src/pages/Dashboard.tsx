@@ -58,9 +58,18 @@ export default function Dashboard() {
   }
 
   const messages = status?.messages || { total: 0, done: 0, errors: 0, pending: 0 };
+  const channels = status?.channels || {};
   const storage = status?.storage || {};
   const scheduler = status?.scheduler || { running: false };
   const recentLogs = status?.recent_logs || [];
+
+  // Aggregate all channels' bytes_uploaded and media_total_bytes
+  const totalBytesUploaded = Object.values(channels).reduce(
+    (sum: number, ch: any) => sum + (ch.bytes_uploaded || 0), 0
+  );
+  const totalMediaBytes = Object.values(channels).reduce(
+    (sum: number, ch: any) => sum + (ch.media_total_bytes || 0), 0
+  );
 
   return (
     <div className="space-y-6">
@@ -85,6 +94,27 @@ export default function Dashboard() {
         <StatCard label="失败" value={messages.errors} icon="❌" color="red" />
         <StatCard label="总计" value={messages.total} icon="📊" color="blue" />
       </div>
+
+      {/* Upload stats */}
+      {totalMediaBytes > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+          <h2 className="text-sm font-medium text-gray-400 mb-3">已入库数据</h2>
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <div className="h-3 bg-gray-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all"
+                  style={{ width: `${Math.min(100, (totalBytesUploaded / totalMediaBytes) * 100)}%` }}
+                />
+              </div>
+            </div>
+            <span className="text-sm text-gray-400 whitespace-nowrap">
+              {formatBytes(totalBytesUploaded)} / {formatBytes(totalMediaBytes)}
+            </span>
+          </div>
+          <p className="text-xs text-gray-600 mt-2">去重后真实入库量（不含重复传输）</p>
+        </div>
+      )}
 
       {/* Storage info */}
       {storage.total > 0 && (

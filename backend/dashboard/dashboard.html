@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TG 频道归档监控</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2129; --line:#2d333b;
+    --txt:#e6edf3; --dim:#8b949e; --mut:#6e7681;
+    --green:#3fb950; --red:#f85149; --yellow:#d29922; --blue:#58a6ff; --purple:#bc8cff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--txt);
+    font-family:"Alibaba PuHuiTi 3.0","Alibaba PuHuiTi","PingFang SC","HarmonyOS Sans SC","MiSans","Microsoft YaHei",system-ui,sans-serif;
+    font-size:14px;line-height:1.5}
+  body{padding:16px;max-width:980px;margin:0 auto}
+  a{color:var(--blue);text-decoration:none}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+  header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 14px;margin-bottom:14px}
+  h1{font-size:18px;font-weight:600}
+  h1 .dot{color:var(--purple)}
+  #meta{color:var(--dim);font-size:12px}
+  #meta b{color:var(--txt);font-weight:500}
+
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+  .tile .k{color:var(--dim);font-size:12px}
+  .tile .v{font-size:20px;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile .s{color:var(--mut);font-size:11px;margin-top:2px}
+  .tile.warn{border-color:var(--yellow)}
+  .tile.warn .v{color:var(--yellow)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;min-width:0}
+  .card-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:10px}
+  .state{width:10px;height:10px;border-radius:50%;flex:none}
+  .state.running{background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+  .state.failed{background:var(--red);box-shadow:0 0 8px var(--red)}
+  .state.completed{background:var(--blue)}
+  .state.unknown,.state.missing{background:var(--mut)}
+  @keyframes pulse{50%{opacity:.45}}
+  .cname{font-size:15px;font-weight:600}
+  .phase{font-size:13px}
+  .pill{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:99px;padding:1px 8px;white-space:nowrap}
+  .spacer{flex:1}
+
+  .bar-row{display:grid;grid-template-columns:52px 1fr 110px;gap:10px;align-items:center;margin:6px 0;min-width:0}
+  .bar-row .lbl{color:var(--dim);font-size:12px}
+  .bar{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden;min-width:0}
+  .fill{height:100%;border-radius:99px;background:linear-gradient(90deg,#1f6feb,#58a6ff);transition:width .6s}
+  .fill.media{background:linear-gradient(90deg,#8957e5,#bc8cff)}
+  .fill.file{background:linear-gradient(90deg,#1a7f37,#3fb950)}
+  .bar-row .num{font-size:12px;color:var(--dim);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+  .curfile{margin-top:10px;padding:10px 12px;background:var(--panel2);border-radius:8px;min-width:0}
+  .curfile .name{word-break:break-all;font-size:13px}
+  .curfile .sub{display:flex;flex-wrap:wrap;gap:4px 16px;color:var(--dim);font-size:12px;margin-top:4px;font-variant-numeric:tabular-nums}
+  .chfoot{display:flex;flex-wrap:wrap;gap:4px 16px;color:var(--dim);font-size:12px;margin-top:10px;font-variant-numeric:tabular-nums}
+
+  .banner{display:flex;gap:8px;align-items:flex-start;border-radius:8px;padding:8px 12px;font-size:13px;margin-top:10px}
+  .banner.warn{background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.4);color:var(--yellow)}
+  .banner.err{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.4);color:var(--red)}
+
+  .events{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .events h2{font-size:14px;font-weight:600;margin-bottom:8px}
+  .ev{display:flex;gap:10px;padding:3px 0;font-size:12.5px;min-width:0;align-items:flex-start}
+  .ev .t{color:var(--mut);flex:none;font-variant-numeric:tabular-nums}
+  .ev .tag{flex:none;width:30px;text-align:center;border-radius:5px;font-size:10.5px;line-height:18px;height:18px;margin-top:1px}
+  .ev .tag.gv{background:rgba(88,166,255,.15);color:var(--blue)}
+  .ev .tag.dj{background:rgba(188,140,255,.15);color:var(--purple)}
+  .ev .m{overflow-wrap:anywhere;word-break:normal;min-width:0}
+  .ev .m.err{color:var(--red)}
+  .ev .m.ok{color:var(--green)}
+  .empty{color:var(--mut);font-size:12px;padding:8px 0}
+  footer{color:var(--mut);font-size:11px;margin-top:14px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot">📡</span> TG 频道归档监控</h1>
+  <span id="meta">加载中…</span>
+</header>
+
+<div class="tiles" id="tiles"></div>
+<div id="cards"></div>
+
+<div class="events">
+  <h2>📜 最近事件 <span style="color:var(--mut);font-weight:400;font-size:12px">（UTC+8）</span></h2>
+  <div id="events"><div class="empty">加载中…</div></div>
+</div>
+
+<footer>数据来源 tg-archive-status-*.json / log.json · 每 2s 自动刷新 · 只读面板</footer>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function fmtB(n){ n = Number(n)||0;
+  const u=["B","KiB","MiB","GiB","TiB"]; let i=0;
+  while(Math.abs(n)>=1024 && i<u.length-1){n/=1024;i++}
+  return i===0 ? Math.round(n)+" B" : n.toFixed(1)+" "+u[i];
+}
+const fmtBps = b => fmtB(b)+"/s";
+function pct(a,b){ return b>0 ? Math.round(a/b*1000)/10 : 0 }
+function fmtETA(sec){
+  if(!isFinite(sec)||sec<=0) return "–";
+  if(sec<60) return Math.floor(sec)+"s";
+  if(sec<3600) return Math.floor(sec/60)+"m "+Math.floor(sec%60)+"s";
+  return Math.floor(sec/3600)+"h "+Math.floor((sec%3600)/60)+"m";
+}
+function bar(label, cls, done, total, extra){
+  const p = pct(done,total);
+  const num = (done||0).toLocaleString()+"/"+(total||0).toLocaleString()+" "+p+"%";
+  return `<div class="bar-row"><span class="lbl">${label}</span>`+
+    `<div class="bar"><div class="fill ${cls}" style="width:${Math.min(p,100)}%"></div></div>`+
+    `<span class="num">${num}${extra?` <b style="color:var(--txt)">${extra}</b>`:""}</span></div>`;
+}
+function stateDot(st){ return `<span class="state ${esc(st)}"></span>` }
+const stateName = {running:"运行中",failed:"失败",completed:"已完成",unknown:"未知",missing:"无数据"};
+
+function fmtAge(sec){
+  if(sec==null) return "–";
+  if(sec<90) return sec+"s";
+  if(sec<3600) return Math.floor(sec/60)+"m";
+  if(sec<86400) return Math.floor(sec/3600)+"h "+Math.floor((sec%3600)/60)+"m";
+  return Math.floor(sec/86400)+"d "+Math.floor((sec%86400)/3600)+"h";
+}
+function tile(k,v,s,warn){
+  return `<div class="tile${warn?" warn":""}"><div class="k">${k}</div><div class="v">${v}</div>${s?`<div class="s">${s}</div>`:""}</div>`;
+}
+
+function render(d){
+  const chs = d.channels||[];
+  const tot = chs.reduce((a,c)=>({
+    md:a.md+(c.messages_done||0), mt:a.mt+(c.messages_total||0),
+    ud:a.ud+(c.media_uploaded||0), ut:a.ut+(c.media_total||0),
+    rb:a.rb+(c.run_transfer_bytes||0), rate:a.rate+(c.rate_bps||0),
+    remain:a.remain+Math.max(0,(c.current_total||0)-(c.current_bytes||0)),
+    bu:a.bu+(c.bytes_uploaded||0), mb:a.mb+(c.media_total_bytes||0),
+  }),{md:0,mt:0,ud:0,ut:0,rb:0,rate:0,remain:0,bu:0,mb:0});
+  const etaAll = tot.rate>0 ? fmtETA(tot.remain/tot.rate) : "–";
+  const dk = d.disk||{};
+  const running = chs.filter(c=>c.state==="running").length;
+  const stalled = chs.filter(c=>c.stalled);
+
+  $("tiles").innerHTML =
+    tile("状态", running>0?`🟢 ${running} 运行`:(chs.some(c=>c.state==="failed")?"🔴 异常":"✅ 空闲"),
+      chs.map(c=>stateName[c.state]||c.state).join(" · ")+` · PID ${chs.map(c=>c.pid||"–").join("/")}`)+
+    tile("消息", tot.md.toLocaleString(), `共 ${tot.mt.toLocaleString()} · ${pct(tot.md,tot.mt)}%`)+
+    tile("媒体", tot.ud.toLocaleString(), `共 ${tot.ut.toLocaleString()} · ${pct(tot.ud,tot.ut)}%`)+
+    tile("已入库 / 总量", fmtB(tot.bu), (tot.mb?`核验入库 · 共 ${fmtB(tot.mb)}`:"")+
+      (tot.rb?` · 本次流量 ${fmtB(tot.rb)}`:""))+
+    tile("总速率", fmtBps(tot.rate), tot.rate>0?`ETA ${etaAll}`:"等待传输")+
+    tile("/data 磁盘", dk.pct+"%", `${fmtB(dk.used)} / ${fmtB(dk.total)}`, dk.pct>85);
+
+  $("cards").innerHTML = chs.map(c=>{
+    const stCls = c.stalled?"warn":(c.state==="failed"?"err":"");
+    let h = `<div class="card">`+
+      `<div class="card-head">${stateDot(c.state)}<span class="cname">${esc(c.name)}</span>`+
+      `<span class="phase">${c.phase_icon} ${esc(c.phase_label)}</span>`+
+      `<span class="pill">${stateName[c.state]||c.state}</span>`+
+      (c.pid?`<span class="pill">PID ${c.pid}</span>`:"")+
+      `<span class="spacer"></span>`+
+      (c.groups_total?`<span class="pill">📂 ${c.current_group??"–"}/${c.groups_total} 组</span>`:"")+
+      `</div>`;
+    h += bar("💬 消息","",c.messages_done,c.messages_total);
+    h += bar("🖼️ 媒体","media",c.media_uploaded,c.media_total);
+    if((c.current_total||0)>0){
+      const p = pct(c.current_bytes,c.current_total);
+      h += `<div class="curfile"><div class="name">🎬 ${esc(c.current_file||"–")}</div>`+
+        `<div class="bar" style="margin-top:6px"><div class="fill file" style="width:${Math.min(p,100)}%"></div></div>`+
+        `<div class="sub"><span>${p}% · ${fmtB(c.current_bytes)} / ${fmtB(c.current_total)}</span>`+
+        `<span>🚀 ${fmtBps(c.rate_bps)}</span>`+
+        `<span>⏱️ ${c.rate_bps>0?fmtETA((c.current_total-c.current_bytes)/c.rate_bps):"–"}</span></div></div>`;
+    } else if(c.current_file){
+      h += `<div class="curfile"><div class="name">📁 ${esc(c.current_file)}</div></div>`;
+    }
+    const doneCh = (c.state==="completed"||c.state==="completed_with_errors");
+    h += `<div class="chfoot">`+
+      (doneCh||c.bytes_uploaded>0?`<span>📥 已入库 ${fmtB(c.bytes_uploaded)}${c.media_total_bytes?` / ${fmtB(c.media_total_bytes)}`:""}</span>`:
+        `<span>📊 本次流量 ${fmtB(c.run_transfer_bytes)}</span>`)+
+      (!doneCh?`<span>📈 ${fmtBps(c.rate_bps)}</span>`:"")+
+      (doneCh&&c.finished_at_epoch?`<span>✅ 完成于 ${fmtAge((Date.now()/1000)-c.finished_at_epoch)}前</span>`:
+        (c.updated_age!=null?`<span>🕒 状态更新于 ${fmtAge(c.updated_age)}前</span>`:""))+`</div>`;
+    if(c.stalled) h += `<div class="banner warn">⚠️ 状态停滞 ${fmtAge(c.updated_age)}未更新 — 可能卡住，建议检查日志或重启 worker</div>`;
+    if(c.error) h += `<div class="banner err">❌ ${esc(String(c.error).slice(0,120))}</div>`;
+    return h+`</div>`;
+  }).join("");
+
+  // events: merge all channels, newest first
+  const evs=[];
+  for(const [cid,list] of Object.entries(d.events||{})){
+    const ch = chs.find(c=>c.id===cid)||{tag:cid.toUpperCase()};
+    for(const e of list) evs.push({...e, tag:ch.tag});
+  }
+  evs.sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const top = evs.slice(0,60);
+  $("events").innerHTML = top.length ? top.map(e=>{
+    let cls="";
+    if(/^错误|失败|Error|Timeout/.test(e.m)) cls="err";
+    else if(/^上传完成|下载完成|归档完成|✅/.test(e.m)) cls="ok";
+    const d8 = e.ts ? new Date(e.ts*1000).toLocaleTimeString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false}) : (e.t||"").slice(-8);
+    return `<div class="ev"><span class="t mono">${d8}</span><span class="tag ${e.tag==="GV"?"gv":"dj"}">${esc(e.tag)}</span><span class="m ${cls}">${esc(e.m)}</span></div>`;
+  }).join("") : `<div class="empty">暂无事件</div>`;
+
+  $("meta").innerHTML = `刷新于 <b>${new Date().toLocaleTimeString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false})}</b>`+
+    (stalled.length?` · <b style="color:var(--yellow)">⚠️ ${stalled.length} 个频道停滞</b>`:"");
+}
+
+async function tick(){
+  try{
+    const r = await fetch("api/status",{cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    render(await r.json());
+  }catch(e){
+    $("meta").innerHTML = `<b style="color:var(--red)">刷新失败：${esc(e.message)}</b>`;
+  }
+}
+tick();
+setInterval(tick,2000);
+</script>
+</body>
+</html>
