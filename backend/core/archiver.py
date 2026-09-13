@@ -16,12 +16,44 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from database import async_session
-from models import Message, TaskLog
+from models import Message, TaskLog, ArchiveStats
 from core.telegram_client import TelegramMonitor, MediaInfo
 from core.notifications import NotificationEvent
 from storage.base import CloudStorageBase, UploadResult
 
 logger = logging.getLogger(__name__)
+
+
+class UploadTracker:
+    """Deduplicated upload byte counter (per-channel singleton)."""
+
+    def __init__(self):
+        self._uploaded_ids: set[str] = set()
+        self._bytes_uploaded: int = 0
+
+    def restore_from_db(self, cloud_ids_rows: list[str]) -> None:
+        """Restore state from DB cloud_ids JSON arrays."""
+        for row in cloud_ids_rows:
+            try:
+                arr = json.loads(row) if row else []
+            except Exception:
+                continue
+            for obj in arr:
+                file_id = obj.get("id")
+                size = int(obj.get("size") or 0)
+                if file_id and file_id not in self._uploaded_ids:
+                    self._uploaded_ids.add(file_id)
+                    self._bytes_uploaded += size
+
+    def mark_uploaded(self, file_id: str, size: int) -> None:
+        """Mark a file as uploaded; idempotent."""
+        if file_id and file_id not in self._uploaded_ids:
+            self._uploaded_ids.add(file_id)
+            self._bytes_uploaded += size
+
+    @property
+    def bytes_uploaded(self) -> int:
+        return self._bytes_uploaded
 
 
 class Archiver:
@@ -45,6 +77,8 @@ class Archiver:
             "last_scan_time": None,
             "last_scan_count": 0,
         }
+        self._upload_trackers: dict[str, UploadTracker] = {}
+        self._run_transfer_bytes: int = 0  # Flow counter for current session
 
     @property
     def stats(self) -> dict:
@@ -75,6 +109,20 @@ class Archiver:
         channel = channel or settings.tg_channel
         if not channel:
             raise ValueError("No channel configured")
+
+        # Initialize tracker for this channel
+        if channel not in self._upload_trackers:
+            tracker = UploadTracker()
+            async with async_session() as db:
+                result = await db.execute(
+                    select(Message.cloud_ids).where(
+                        Message.channel == channel,
+                        Message.cloud_ids.isnot(None)
+                    )
+                )
+                cloud_ids_rows = [row[0] for row in result.all()]
+                tracker.restore_from_db(cloud_ids_rows)
+            self._upload_trackers[channel] = tracker
 
         results = {"scanned": 0, "archived": 0, "skipped": 0, "errors": 0}
         if self.mount_manager is not None:
@@ -228,6 +276,20 @@ class Archiver:
                 pass
 
         # Save caption as markdown if exists
+        result_files = []
+        
+        # Track main file upload
+        tracker = self._upload_trackers.get(channel)
+        if tracker and result.file_id:
+            tracker.mark_uploaded(result.file_id, result.file_size)
+        self._run_transfer_bytes += result.file_size
+        result_files.append({
+            "id": result.file_id,
+            "path": remote_path,
+            "md5": result.md5,
+            "size": result.file_size
+        })
+
         if media_info.caption:
             caption_path = f"{remote_dir}/message_{media_info.message_id}.md"
             caption_file = os.path.join(download_dir, f"caption_{media_info.message_id}.md")
@@ -236,33 +298,25 @@ class Archiver:
                 with open(caption_file, "w") as f:
                     f.write(media_info.caption)
                 caption_result = await storage.upload_file(caption_file, caption_path)
-                result_dict = {
-                    "files": [
-                        {"id": result.file_id, "path": remote_path, "md5": result.md5, "size": result.file_size},
-                        {"id": caption_result.file_id, "path": caption_path, "md5": caption_result.md5, "size": caption_result.file_size},
-                    ]
-                }
+                if tracker and caption_result.file_id:
+                    tracker.mark_uploaded(caption_result.file_id, caption_result.file_size)
+                self._run_transfer_bytes += caption_result.file_size
+                result_files.append({
+                    "id": caption_result.file_id,
+                    "path": caption_path,
+                    "md5": caption_result.md5,
+                    "size": caption_result.file_size
+                })
             except Exception as e:
                 logger.warning(f"Failed to save caption for message {media_info.message_id}: {e}")
-                result_dict = {
-                    "files": [
-                        {"id": result.file_id, "path": remote_path, "md5": result.md5, "size": result.file_size}
-                    ]
-                }
             finally:
                 try:
                     os.unlink(caption_file)
                 except OSError:
                     pass
-        else:
-            result_dict = {
-                "files": [
-                    {"id": result.file_id, "path": remote_path, "md5": result.md5, "size": result.file_size}
-                ]
-            }
 
         record.state = "done"
-        record.cloud_ids = json.dumps(result_dict["files"])
+        record.cloud_ids = json.dumps(result_files)
         record.updated_at = time.time()
 
         await self._log_info(
@@ -384,6 +438,41 @@ class Archiver:
                 )
             )
 
+            # Per-channel stats with deduplicated bytes_uploaded
+            channels_stats = {}
+            channel_result = await db.execute(
+                select(Message.channel).distinct()
+            )
+            for (ch,) in channel_result.all():
+                if not ch:
+                    continue
+                
+                ch_total = await db.scalar(
+                    select(func.count(Message.id)).where(Message.channel == ch)
+                )
+                ch_done = await db.scalar(
+                    select(func.count(Message.id)).where(
+                        Message.channel == ch, Message.state == "done"
+                    )
+                )
+                ch_media_total_bytes = await db.scalar(
+                    select(func.sum(Message.file_size)).where(
+                        Message.channel == ch,
+                        Message.media_type.isnot(None)
+                    )
+                ) or 0
+
+                tracker = self._upload_trackers.get(ch)
+                bytes_uploaded = tracker.bytes_uploaded if tracker else 0
+
+                channels_stats[ch] = {
+                    "messages_total": ch_total or 0,
+                    "messages_done": ch_done or 0,
+                    "media_total_bytes": ch_media_total_bytes,
+                    "bytes_uploaded": bytes_uploaded,
+                    "run_transfer_bytes": self._run_transfer_bytes,
+                }
+
             # Recent activity
             recent_stmt = (
                 select(TaskLog)
@@ -406,6 +495,7 @@ class Archiver:
                     "errors": errors or 0,
                     "pending": pending or 0,
                 },
+                "channels": channels_stats,
                 "storage": storage_info,
                 "archiver": self._stats,
                 "recent_logs": [
